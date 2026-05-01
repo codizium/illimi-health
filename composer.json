@@ -1,0 +1,25 @@
+{
+  "name": "codizium/illimi-health",
+  "description": "iLLIMI Edu-Suites - health Module",
+  "type": "library",
+  "license": "proprietary",
+  "require": {
+    "php": "^8.2",
+    "codizium/codizium-core": "dev-main"
+  },
+  "autoload": {
+    "psr-4": {
+      "Illimi\\Health\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Illimi\\Health\\HealthServiceProvider"
+      ]
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "version": "dev-main"
+}
