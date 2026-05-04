@@ -19,6 +19,10 @@ class IncidentService
         Gate::authorize('viewAny', HealthIncident::class);
 
         return HealthIncident::with(['student', 'reporter', 'escalatedTo'])
+            ->when(
+                user()?->hasRole('parent') ?? false,
+                fn ($query) => $query->whereHas('student.parents', fn ($q) => $q->where('users.id', user()->id))
+            )
             ->latest('incident_date')
             ->paginate(min(max($perPage, 1), 100));
     }

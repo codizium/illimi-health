@@ -17,6 +17,10 @@ class MedicalVisitService
         Gate::authorize('viewAny', MedicalVisit::class);
 
         return MedicalVisit::with(['student', 'attendee'])
+            ->when(
+                user()?->hasRole('parent') ?? false,
+                fn ($query) => $query->whereHas('student.parents', fn ($q) => $q->where('users.id', user()->id))
+            )
             ->when($filters['student_id'] ?? null, fn ($query, $studentId) => $query->where('student_id', $studentId))
             ->when($filters['visit_date'] ?? null, fn ($query, $visitDate) => $query->whereDate('visit_date', $visitDate))
             ->latest('visit_date')

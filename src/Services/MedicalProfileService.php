@@ -8,11 +8,15 @@ use Illimi\Health\Events\HealthEntityChanged;
 use Illimi\Health\Models\EmergencyContact;
 use Illimi\Health\Models\MedicalProfile;
 use Illimi\Health\Resources\MedicalProfileResource;
+use Illimi\Students\Models\Student;
 
 class MedicalProfileService
 {
     public function getByStudent(string $studentId): ?MedicalProfile
     {
+        Gate::authorize('viewAny', MedicalProfile::class);
+        $this->authorizeParentForStudent($studentId);
+
         $profile = MedicalProfile::with(['student.parents', 'emergencyContacts'])->where('student_id', $studentId)->first();
 
         if ($profile) {
@@ -25,6 +29,7 @@ class MedicalProfileService
     public function upsert(string $studentId, array $data): MedicalProfile
     {
         Gate::authorize('create', MedicalProfile::class);
+        $this->authorizeParentForStudent($studentId);
 
         return DB::transaction(function () use ($studentId, $data): MedicalProfile {
             $contacts = $data['emergency_contacts'] ?? [];
@@ -56,5 +61,22 @@ class MedicalProfileService
 
             return $profile;
         });
+    }
+
+    protected function authorizeParentForStudent(string $studentId): void
+    {
+        $currentUser = user();
+        if (! $currentUser || ! $currentUser->hasRole('parent')) {
+            return;
+        }
+
+        $allowed = Student::query()
+            ->where('id', $studentId)
+            ->whereHas('parents', fn ($q) => $q->where('users.id', $currentUser->id))
+            ->exists();
+
+        if (! $allowed) {
+            abort(403, 'You are not allowed to access this student.');
+        }
     }
 }

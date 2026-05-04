@@ -7,6 +7,7 @@ use Illimi\Health\Events\ImmunizationDue;
 use Illimi\Health\Events\HealthEntityChanged;
 use Illimi\Health\Models\Immunization;
 use Illimi\Health\Resources\ImmunizationResource;
+use Illimi\Students\Models\Student;
 
 class ImmunizationService
 {
@@ -16,7 +17,9 @@ class ImmunizationService
             Gate::authorize('viewAny', Immunization::class);
         }
 
-        return Immunization::with('student')
+        $this->authorizeParentForStudent($studentId);
+
+        return Immunization::with(['student.parents'])
             ->where('student_id', $studentId)
             ->orderByDesc('due_date')
             ->get();
@@ -37,12 +40,12 @@ class ImmunizationService
     public function due()
     {
         if (user()) {
-            Gate::authorize('viewAny', Immunization::class);
+            Gate::authorize('viewDueImmunizations', Immunization::class);
         }
 
         $days = (int) config('illimi-health.immunization_reminder_days', 14);
 
-        return Immunization::with('student')
+        return Immunization::with(['student.parents'])
             ->whereNotNull('due_date')
             ->whereDate('due_date', '<=', now()->addDays($days)->toDateString())
             ->orderBy('due_date')
@@ -58,5 +61,22 @@ class ImmunizationService
         }
 
         return $records->count();
+    }
+
+    protected function authorizeParentForStudent(string $studentId): void
+    {
+        $currentUser = user();
+        if (! $currentUser || ! $currentUser->hasRole('parent')) {
+            return;
+        }
+
+        $allowed = Student::query()
+            ->where('id', $studentId)
+            ->whereHas('parents', fn ($q) => $q->where('users.id', $currentUser->id))
+            ->exists();
+
+        if (! $allowed) {
+            abort(403, 'You are not allowed to access this student.');
+        }
     }
 }
