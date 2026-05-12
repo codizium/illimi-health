@@ -7,9 +7,11 @@ Route::middleware(['web', 'auth', 'organization'])
     ->prefix('health')
     ->name('health.')
     ->group(function (): void {
-        Route::get('/', [HealthWebController::class, 'index'])->name('index');
-        Route::get('/profiles', [HealthWebController::class, 'profiles'])->name('profiles');
-        Route::get('/visits', [HealthWebController::class, 'visits'])->name('visits');
-        Route::get('/incidents', [HealthWebController::class, 'incidents'])->name('incidents');
-        Route::get('/immunizations', [HealthWebController::class, 'immunizations'])->name('immunizations');
+        Route::middleware('core.role:admin|super-admin|principal')->group(function () {
+            Route::get('/', [HealthWebController::class, 'index'])->name('index');
+            Route::get('/profiles', [HealthWebController::class, 'profiles'])->name('profiles');
+            Route::get('/visits', [HealthWebController::class, 'visits'])->name('visits');
+            Route::get('/incidents', [HealthWebController::class, 'incidents'])->name('incidents');
+            Route::get('/immunizations', [HealthWebController::class, 'immunizations'])->name('immunizations');
+        });
     });
