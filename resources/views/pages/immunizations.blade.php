@@ -34,19 +34,89 @@
                             <th>Status</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        @foreach ($immunizations as $item)
-                            <tr>
-                                <td>{{ $item->student?->full_name ?? 'Unknown student' }}</td>
-                                <td>{{ $item->vaccine_name }}</td>
-                                <td>{{ $item->dose_number }}</td>
-                                <td>{{ $item->due_date?->format('d M Y') ?: '—' }}</td>
-                                <td><span class="badge bg-primary-50 text-primary-600">{{ ucfirst($item->status?->value ?? 'unknown') }}</span></td>
-                            </tr>
-                        @endforeach
+                    <tbody id="healthImmunizationsTbody">
+                        <tr>
+                            <td colspan="5" class="text-center text-secondary-light py-24">Loading immunizations…</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        (function() {
+            const apiBase = @json($apiBase ?? '/api/v1/health');
+            const tbody = document.getElementById('healthImmunizationsTbody');
+            const status = document.getElementById('healthImmunizationRealtimeStatus');
+            const Swal = window.Swal;
+
+            const escapeHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const setTbody = (html) => {
+                if (!tbody) return;
+                tbody.innerHTML = html;
+            };
+
+            const loadImmunizations = async () => {
+                try {
+                    Swal?.fire({
+                        title: 'Loading immunizations…',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal?.showLoading(),
+                    });
+                    const res = await window.axios.get(`${apiBase}/immunizations`, { params: { per_page: 100 } });
+                    const list = res?.data?.data?.data || [];
+                    const rows = Array.isArray(list) ? list : [];
+
+                    if (rows.length === 0) {
+                        setTbody('<tr><td colspan="5" class="text-center text-secondary-light py-24">No immunizations found.</td></tr>');
+                        return;
+                    }
+
+                    setTbody(rows.map((r) => {
+                        const student = r?.student?.full_name || 'Unknown student';
+                        const vaccine = r?.vaccine_name || '—';
+                        const dose = r?.dose_number ?? '—';
+                        const due = r?.due_date || '—';
+                        const statusText = r?.status || 'unknown';
+                        return `<tr>
+                            <td>${escapeHtml(student)}</td>
+                            <td>${escapeHtml(vaccine)}</td>
+                            <td>${escapeHtml(dose)}</td>
+                            <td>${escapeHtml(due)}</td>
+                            <td><span class="badge bg-primary-50 text-primary-600">${escapeHtml(statusText)}</span></td>
+                        </tr>`;
+                    }).join(''));
+                } catch (e) {
+                    setTbody('<tr><td colspan="5" class="text-center text-danger py-24">Failed to load immunizations.</td></tr>');
+                    Swal?.fire({
+                        icon: 'error',
+                        title: 'Unable to load immunizations',
+                        text: e?.response?.data?.message || 'Please refresh and try again.',
+                    });
+                } finally {
+                    Swal?.close();
+                }
+            };
+
+            window.addEventListener('health:entity.changed', (event) => {
+                if (event.detail?.entity !== 'immunization') return;
+                if (status) {
+                    status.className = 'badge bg-success-focus text-success-main';
+                    status.textContent = 'Immunization update received';
+                }
+                window.setTimeout(() => void loadImmunizations(), 300);
+            });
+
+            void loadImmunizations();
+        })();
+    </script>
+@endpush

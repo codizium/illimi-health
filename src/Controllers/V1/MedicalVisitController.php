@@ -19,7 +19,10 @@ class MedicalVisitController extends BaseController
 
     public function index(Request $request): JsonResponse
     {
-        $records = $this->visits->paginate($request->only(['student_id', 'visit_date']), (int) $request->query('per_page', 15));
+        $perPage = (int) $request->query('per_page', 15);
+        $perPage = max(1, min(100, $perPage));
+
+        $records = $this->visits->paginate($request->only(['student_id', 'visit_date']), $perPage);
 
         return $this->response->success(new MedicalVisitCollection($records), 'Medical visits retrieved successfully.');
     }

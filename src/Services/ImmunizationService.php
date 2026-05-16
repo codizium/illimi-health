@@ -2,6 +2,7 @@
 
 namespace Illimi\Health\Services;
 
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Gate;
 use Illimi\Health\Events\ImmunizationDue;
 use Illimi\Health\Events\HealthEntityChanged;
@@ -11,6 +12,33 @@ use Illimi\Students\Models\Student;
 
 class ImmunizationService
 {
+    public function paginate(array $filters, int $perPage = 15): LengthAwarePaginator
+    {
+        if (user()) {
+            Gate::authorize('viewAny', Immunization::class);
+        }
+
+        $days = (int) config('illimi-health.immunization_reminder_days', 14);
+        $dueOnly = filter_var($filters['due_only'] ?? false, FILTER_VALIDATE_BOOL);
+
+        return Immunization::query()
+            ->with('student')
+            ->when(
+                user()?->hasRole('parent') ?? false,
+                fn ($query) => $query->whereHas('student.parents', fn ($q) => $q->where('users.id', user()->id))
+            )
+            ->when($filters['student_id'] ?? null, fn ($query, $studentId) => $query->where('student_id', $studentId))
+            ->when($filters['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            ->when(
+                $dueOnly,
+                fn ($query) => $query
+                    ->whereNotNull('due_date')
+                    ->whereDate('due_date', '<=', now()->addDays($days)->toDateString())
+            )
+            ->orderByDesc('due_date')
+            ->paginate(min(max($perPage, 1), 100));
+    }
+
     public function forStudent(string $studentId)
     {
         if (user()) {

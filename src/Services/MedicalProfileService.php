@@ -2,6 +2,7 @@
 
 namespace Illimi\Health\Services;
 
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\DB;
 use Illimi\Health\Events\HealthEntityChanged;
@@ -12,6 +13,21 @@ use Illimi\Students\Models\Student;
 
 class MedicalProfileService
 {
+    public function paginate(array $filters, int $perPage = 15): LengthAwarePaginator
+    {
+        Gate::authorize('viewAny', MedicalProfile::class);
+
+        return MedicalProfile::query()
+            ->with(['student', 'emergencyContacts'])
+            ->when(
+                user()?->hasRole('parent') ?? false,
+                fn ($query) => $query->whereHas('student.parents', fn ($q) => $q->where('users.id', user()->id))
+            )
+            ->when($filters['student_id'] ?? null, fn ($query, $studentId) => $query->where('student_id', $studentId))
+            ->latest()
+            ->paginate(min(max($perPage, 1), 100));
+    }
+
     public function getByStudent(string $studentId): ?MedicalProfile
     {
         Gate::authorize('viewAny', MedicalProfile::class);

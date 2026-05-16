@@ -3,10 +3,10 @@
 @section('content')
     @php
         $modules = [
-            ['label' => 'Medical Profiles', 'route' => route('health.profiles'), 'icon' => 'ri-heart-pulse-line', 'count' => $profileCount, 'text' => 'Encrypted health records, allergies, medications, and emergency contact chains.'],
-            ['label' => 'Sick Bay Visits', 'route' => route('health.visits'), 'icon' => 'ri-first-aid-kit-line', 'count' => $visitCount, 'text' => 'Log complaints, treatment, and sent-home outcomes with parent notifications.'],
-            ['label' => 'Incidents', 'route' => route('health.incidents'), 'icon' => 'ri-alarm-warning-line', 'count' => $incidentCount, 'text' => 'Track incidents, escalations, and management alerts in one workflow.'],
-            ['label' => 'Immunizations', 'route' => route('health.immunizations'), 'icon' => 'ri-syringe-line', 'count' => $dueImmunizationsCount, 'text' => 'Monitor vaccine records, upcoming due dates, and reminder activity.'],
+            ['key' => 'profiles', 'label' => 'Medical Profiles', 'route' => route('health.profiles'), 'icon' => 'ri-heart-pulse-line', 'text' => 'Encrypted health records, allergies, medications, and emergency contact chains.'],
+            ['key' => 'visits', 'label' => 'Sick Bay Visits', 'route' => route('health.visits'), 'icon' => 'ri-first-aid-kit-line', 'text' => 'Log complaints, treatment, and sent-home outcomes with parent notifications.'],
+            ['key' => 'incidents', 'label' => 'Incidents', 'route' => route('health.incidents'), 'icon' => 'ri-alarm-warning-line', 'text' => 'Track incidents, escalations, and management alerts in one workflow.'],
+            ['key' => 'immunizations_due', 'label' => 'Immunizations', 'route' => route('health.immunizations'), 'icon' => 'ri-syringe-line', 'text' => 'Monitor vaccine records, upcoming due dates, and reminder activity.'],
         ];
     @endphp
 
@@ -29,7 +29,7 @@
                             <div class="w-56-px h-56-px rounded-circle bg-danger-50 text-danger-600 d-inline-flex align-items-center justify-content-center text-2xl">
                                 <i class="{{ $module['icon'] }}"></i>
                             </div>
-                            <span class="badge bg-danger-focus text-danger-main">{{ $module['count'] }}</span>
+                            <span class="badge bg-danger-focus text-danger-main" id="healthDashboardCount_{{ $module['key'] }}">—</span>
                         </div>
                         <h6 class="mb-10 text-primary-light">{{ $module['label'] }}</h6>
                         <p class="text-secondary-light mb-20">{{ $module['text'] }}</p>
@@ -43,3 +43,49 @@
         @endforeach
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        (function() {
+            const apiBase = @json($apiBase ?? '/api/v1/health');
+
+            const setCount = (key, value) => {
+                const el = document.getElementById(`healthDashboardCount_${key}`);
+                if (el) el.textContent = value ?? '—';
+            };
+
+            const load = async () => {
+                const swal = window.Swal || null;
+                try {
+                    if (swal) {
+                        swal.fire({
+                            title: 'Loading health dashboard…',
+                            allowOutsideClick: false,
+                            didOpen: () => swal.showLoading(),
+                        });
+                    }
+                    const res = await window.axios.get(`${apiBase}/dashboard`);
+                    const data = res?.data?.data || {};
+                    setCount('profiles', data.profileCount);
+                    setCount('visits', data.visitCount);
+                    setCount('incidents', data.incidentCount);
+                    setCount('immunizations_due', data.dueImmunizationsCount);
+                } catch (e) {
+                    if (swal) {
+                        swal.fire({
+                            icon: 'error',
+                            title: 'Unable to load dashboard',
+                            text: e?.response?.data?.message || 'Please refresh and try again.',
+                        });
+                    }
+                } finally {
+                    if (swal) swal.close();
+                }
+            };
+
+            if (window.axios && (window.Swal || window.Swal === undefined)) {
+                void load();
+            }
+        })();
+    </script>
+@endpush

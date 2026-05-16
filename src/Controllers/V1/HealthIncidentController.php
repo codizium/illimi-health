@@ -20,7 +20,9 @@ class HealthIncidentController extends BaseController
 
     public function index(Request $request): JsonResponse
     {
-        $records = $this->incidents->paginate((int) $request->query('per_page', 15));
+        $perPage = (int) $request->query('per_page', 15);
+        $perPage = max(1, min(100, $perPage));
+        $records = $this->incidents->paginate($perPage);
 
         return $this->response->success(HealthIncidentResource::collection($records), 'Incidents retrieved successfully.');
     }

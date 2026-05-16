@@ -34,19 +34,97 @@
                             <th>Escalation</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        @foreach ($incidents as $incident)
-                            <tr>
-                                <td>{{ $incident->student?->full_name ?? 'Unknown student' }}</td>
-                                <td>{{ $incident->incident_date?->format('d M Y') }}</td>
-                                <td><span class="badge {{ in_array($incident->severity?->value, ['critical', 'severe'], true) ? 'bg-danger-focus text-danger-main' : 'bg-warning-focus text-warning-main' }}">{{ ucfirst($incident->severity?->value ?? 'unknown') }}</span></td>
-                                <td>{{ \Illuminate\Support\Str::limit($incident->description, 80) }}</td>
-                                <td>{{ $incident->escalated ? ($incident->escalatedTo?->name ?: 'Escalated') : 'Open' }}</td>
-                            </tr>
-                        @endforeach
+                    <tbody id="healthIncidentsTbody">
+                        <tr>
+                            <td colspan="5" class="text-center text-secondary-light py-24">Loading incidents…</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        (function() {
+            const apiBase = @json($apiBase ?? '/api/v1/health');
+            const tbody = document.getElementById('healthIncidentsTbody');
+            const status = document.getElementById('healthIncidentRealtimeStatus');
+            const Swal = window.Swal;
+
+            const escapeHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const setTbody = (html) => {
+                if (!tbody) return;
+                tbody.innerHTML = html;
+            };
+
+            const truncate = (value, max = 80) => {
+                const s = String(value ?? '');
+                if (s.length <= max) return s;
+                return s.slice(0, max - 1) + '…';
+            };
+
+            const loadIncidents = async () => {
+                try {
+                    Swal?.fire({
+                        title: 'Loading incidents…',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal?.showLoading(),
+                    });
+                    const res = await window.axios.get(`${apiBase}/incidents`, { params: { per_page: 50 } });
+                    const list = res?.data?.data?.data || [];
+                    const rows = Array.isArray(list) ? list : [];
+
+                    if (rows.length === 0) {
+                        setTbody('<tr><td colspan="5" class="text-center text-secondary-light py-24">No incidents found.</td></tr>');
+                        return;
+                    }
+
+                    setTbody(rows.map((i) => {
+                        const student = i?.student?.full_name || 'Unknown student';
+                        const date = i?.incident_date || '—';
+                        const severity = String(i?.severity || 'unknown');
+                        const isCritical = ['critical', 'severe'].includes(severity);
+                        const badgeClass = isCritical ? 'bg-danger-focus text-danger-main' : 'bg-warning-focus text-warning-main';
+                        const description = truncate(i?.description || '—', 80);
+                        const escalation = i?.escalated ? (i?.escalated_to?.name || 'Escalated') : 'Open';
+                        return `<tr>
+                            <td>${escapeHtml(student)}</td>
+                            <td>${escapeHtml(date)}</td>
+                            <td><span class="badge ${badgeClass}">${escapeHtml(severity)}</span></td>
+                            <td>${escapeHtml(description)}</td>
+                            <td>${escapeHtml(escalation)}</td>
+                        </tr>`;
+                    }).join(''));
+                } catch (e) {
+                    setTbody('<tr><td colspan="5" class="text-center text-danger py-24">Failed to load incidents.</td></tr>');
+                    Swal?.fire({
+                        icon: 'error',
+                        title: 'Unable to load incidents',
+                        text: e?.response?.data?.message || 'Please refresh and try again.',
+                    });
+                } finally {
+                    Swal?.close();
+                }
+            };
+
+            window.addEventListener('health:entity.changed', (event) => {
+                if (event.detail?.entity !== 'incident') return;
+                if (status) {
+                    status.className = 'badge bg-success-focus text-success-main';
+                    status.textContent = 'Incident update received';
+                }
+                window.setTimeout(() => void loadIncidents(), 300);
+            });
+
+            void loadIncidents();
+        })();
+    </script>
+@endpush

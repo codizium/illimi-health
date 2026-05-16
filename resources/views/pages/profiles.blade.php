@@ -35,16 +35,10 @@
                             <th>Emergency Contacts</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        @foreach ($profiles as $profile)
-                            <tr>
-                                <td>{{ $profile->student?->full_name ?? 'Unknown student' }}</td>
-                                <td>{{ $profile->blood_group ?: '—' }}</td>
-                                <td>{{ collect($profile->allergies ?? [])->filter()->join(', ') ?: '—' }}</td>
-                                <td>{{ $profile->doctor_name ?: '—' }}</td>
-                                <td>{{ $profile->emergencyContacts->count() }}</td>
-                            </tr>
-                        @endforeach
+                    <tbody id="healthProfilesTbody">
+                        <tr>
+                            <td colspan="5" class="text-center text-secondary-light py-24">Loading profiles…</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -65,12 +59,12 @@
                     <form id="healthProfileForm" class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Student</label>
-                            <select class="form-select" name="student_id" required>
-                                <option value="">Select student</option>
-                                @foreach ($students as $student)
-                                    <option value="{{ $student->id }}">{{ $student->full_name }}</option>
-                                @endforeach
-                            </select>
+                            <input type="hidden" name="student_id" required>
+                            <div class="position-relative">
+                                <input type="text" class="form-control" name="student_search" placeholder="Search student by name/admission number…" autocomplete="off" required>
+                                <div class="list-group position-absolute w-100 shadow-sm d-none" style="z-index: 1060; max-height: 260px; overflow:auto;" id="healthStudentSearchResults"></div>
+                            </div>
+                            <div class="form-text">Type at least 2 characters to search.</div>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Blood Group</label>
@@ -114,17 +108,81 @@
 @push('scripts')
     <script>
         (function() {
+            const apiBase = @json($apiBase ?? '/api/v1/health');
             const modalElement = document.getElementById('healthProfileModal');
             const form = document.getElementById('healthProfileForm');
             const status = document.getElementById('healthProfileRealtimeStatus');
             const modal = modalElement ? new bootstrap.Modal(modalElement) : null;
+            const tbody = document.getElementById('healthProfilesTbody');
+            const studentSearchInput = form?.querySelector('input[name="student_search"]');
+            const studentIdInput = form?.querySelector('input[name="student_id"]');
+            const results = document.getElementById('healthStudentSearchResults');
+
+            const Swal = window.Swal;
 
             document.querySelector('.js-health-profile-trigger')?.addEventListener('click', () => modal?.show());
+
+            const setTbody = (html) => {
+                if (!tbody) return;
+                tbody.innerHTML = html;
+            };
+
+            const escapeHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const loadProfiles = async () => {
+                try {
+                    Swal?.fire({
+                        title: 'Loading profiles…',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal?.showLoading(),
+                    });
+                    const res = await window.axios.get(`${apiBase}/profiles`, { params: { per_page: 100 } });
+                    const list = res?.data?.data?.data || [];
+
+                    if (!Array.isArray(list) || list.length === 0) {
+                        setTbody('<tr><td colspan="5" class="text-center text-secondary-light py-24">No profiles found.</td></tr>');
+                        return;
+                    }
+
+                    setTbody(list.map((p) => {
+                        const studentName = p?.student?.full_name || 'Unknown student';
+                        const blood = p?.blood_group || '—';
+                        const allergies = Array.isArray(p?.allergies) ? p.allergies.filter(Boolean).join(', ') : '—';
+                        const doctor = p?.doctor_name || '—';
+                        const emergencyCount = Array.isArray(p?.emergency_contacts) ? p.emergency_contacts.length : 0;
+                        return `<tr>
+                            <td>${escapeHtml(studentName)}</td>
+                            <td>${escapeHtml(blood)}</td>
+                            <td>${escapeHtml(allergies || '—')}</td>
+                            <td>${escapeHtml(doctor)}</td>
+                            <td>${escapeHtml(emergencyCount)}</td>
+                        </tr>`;
+                    }).join(''));
+                } catch (e) {
+                    setTbody('<tr><td colspan="5" class="text-center text-danger py-24">Failed to load profiles.</td></tr>');
+                    Swal?.fire({
+                        icon: 'error',
+                        title: 'Unable to load profiles',
+                        text: e?.response?.data?.message || 'Please refresh and try again.',
+                    });
+                } finally {
+                    Swal?.close();
+                }
+            };
 
             form?.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 const formData = new FormData(form);
                 const studentId = formData.get('student_id');
+                if (!studentId) {
+                    Swal?.fire({ icon: 'warning', title: 'Select a student', text: 'Search and pick a student before saving.' });
+                    return;
+                }
                 const payload = {
                     blood_group: formData.get('blood_group') || null,
                     genotype: formData.get('genotype') || null,
@@ -135,10 +193,18 @@
                     notes: formData.get('notes') || null,
                 };
 
-                const response = await window.axios.post(`/api/v1/health/profiles/${studentId}`, payload);
-                if (response?.status >= 200 && response?.status < 300) {
-                    modal?.hide();
-                    window.location.reload();
+                try {
+                    Swal?.fire({ title: 'Saving profile…', allowOutsideClick: false, didOpen: () => Swal?.showLoading() });
+                    const response = await window.axios.post(`${apiBase}/profiles/${studentId}`, payload);
+                    if (response?.status >= 200 && response?.status < 300) {
+                        modal?.hide();
+                        Swal?.fire({ icon: 'success', title: 'Profile saved', timer: 2000, showConfirmButton: false, toast: true, position: 'top-end' });
+                        await loadProfiles();
+                    }
+                } catch (e) {
+                    Swal?.fire({ icon: 'error', title: 'Save failed', text: e?.response?.data?.message || 'Failed to save profile.' });
+                } finally {
+                    Swal?.close();
                 }
             });
 
@@ -148,8 +214,63 @@
                     status.className = 'badge bg-success-focus text-success-main';
                     status.textContent = 'Profile update received';
                 }
-                window.setTimeout(() => window.location.reload(), 700);
+                window.setTimeout(() => void loadProfiles(), 300);
             });
+
+            // Student search (uses Students module API)
+            let searchTimer = null;
+            const hideResults = () => {
+                results?.classList.add('d-none');
+                if (results) results.innerHTML = '';
+            };
+
+            studentSearchInput?.addEventListener('input', () => {
+                const q = String(studentSearchInput.value || '').trim();
+                studentIdInput.value = '';
+                hideResults();
+
+                if (searchTimer) window.clearTimeout(searchTimer);
+                if (q.length < 2) return;
+
+                searchTimer = window.setTimeout(async () => {
+                    try {
+                        const res = await window.axios.get('/api/v1/students', { params: { per_page: 10, search: q } });
+                        const list = res?.data?.data?.data || res?.data?.data || [];
+                        const students = Array.isArray(list) ? list : [];
+                        if (!results) return;
+                        if (students.length === 0) {
+                            results.innerHTML = '<div class="list-group-item text-secondary-light">No students found</div>';
+                            results.classList.remove('d-none');
+                            return;
+                        }
+                        results.innerHTML = students.map((s) => {
+                            const label = `${s.full_name || s.name || 'Student'}${s.admission_number ? ` • ${s.admission_number}` : ''}`;
+                            return `<button type="button" class="list-group-item list-group-item-action" data-student-id="${escapeHtml(s.id)}" data-student-label="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+                        }).join('');
+                        results.classList.remove('d-none');
+                    } catch (e) {
+                        // ignore noisy failures
+                    }
+                }, 250);
+            });
+
+            results?.addEventListener('click', (e) => {
+                const btn = e.target?.closest?.('[data-student-id]');
+                if (!btn) return;
+                const id = btn.getAttribute('data-student-id') || '';
+                const label = btn.getAttribute('data-student-label') || '';
+                if (studentIdInput) studentIdInput.value = id;
+                if (studentSearchInput) studentSearchInput.value = label;
+                hideResults();
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!results || results.classList.contains('d-none')) return;
+                if (results.contains(e.target) || studentSearchInput?.contains(e.target)) return;
+                hideResults();
+            });
+
+            void loadProfiles();
         })();
     </script>
 @endpush

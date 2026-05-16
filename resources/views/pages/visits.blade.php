@@ -34,23 +34,91 @@
                             <th>Parent Notified</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        @foreach ($visits as $visit)
-                            <tr>
-                                <td>{{ $visit->student?->full_name ?? 'Unknown student' }}</td>
-                                <td>{{ $visit->visit_date?->format('d M Y') }}</td>
-                                <td>{{ \Illuminate\Support\Str::limit($visit->complaint, 70) }}</td>
-                                <td>{{ str_replace('_', ' ', $visit->outcome?->value ?? '—') }}</td>
-                                <td>
-                                    <span class="badge {{ $visit->parent_notified ? 'bg-success-focus text-success-main' : 'bg-warning-focus text-warning-main' }}">
-                                        {{ $visit->parent_notified ? 'Yes' : 'Pending' }}
-                                    </span>
-                                </td>
-                            </tr>
-                        @endforeach
+                    <tbody id="healthVisitsTbody">
+                        <tr>
+                            <td colspan="5" class="text-center text-secondary-light py-24">Loading visits…</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        (function() {
+            const apiBase = @json($apiBase ?? '/api/v1/health');
+            const tbody = document.getElementById('healthVisitsTbody');
+            const status = document.getElementById('healthVisitRealtimeStatus');
+            const Swal = window.Swal;
+
+            const escapeHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const setTbody = (html) => {
+                if (!tbody) return;
+                tbody.innerHTML = html;
+            };
+
+            const loadVisits = async () => {
+                try {
+                    Swal?.fire({
+                        title: 'Loading visits…',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal?.showLoading(),
+                    });
+                    const res = await window.axios.get(`${apiBase}/visits`, { params: { per_page: 50 } });
+                    const list = res?.data?.data?.data?.data || res?.data?.data?.data || [];
+                    const rows = Array.isArray(list) ? list : [];
+
+                    if (rows.length === 0) {
+                        setTbody('<tr><td colspan="5" class="text-center text-secondary-light py-24">No visits found.</td></tr>');
+                        return;
+                    }
+
+                    setTbody(rows.map((v) => {
+                        const student = v?.student?.full_name || 'Unknown student';
+                        const date = v?.visit_date || '—';
+                        const complaint = v?.complaint || '—';
+                        const outcome = String(v?.outcome || '—').replaceAll('_', ' ');
+                        const notified = !!v?.parent_notified;
+                        const badgeClass = notified ? 'bg-success-focus text-success-main' : 'bg-warning-focus text-warning-main';
+                        const badgeText = notified ? 'Yes' : 'Pending';
+                        return `<tr>
+                            <td>${escapeHtml(student)}</td>
+                            <td>${escapeHtml(date)}</td>
+                            <td>${escapeHtml(complaint)}</td>
+                            <td>${escapeHtml(outcome)}</td>
+                            <td><span class="badge ${badgeClass}">${escapeHtml(badgeText)}</span></td>
+                        </tr>`;
+                    }).join(''));
+                } catch (e) {
+                    setTbody('<tr><td colspan="5" class="text-center text-danger py-24">Failed to load visits.</td></tr>');
+                    Swal?.fire({
+                        icon: 'error',
+                        title: 'Unable to load visits',
+                        text: e?.response?.data?.message || 'Please refresh and try again.',
+                    });
+                } finally {
+                    Swal?.close();
+                }
+            };
+
+            window.addEventListener('health:entity.changed', (event) => {
+                if (event.detail?.entity !== 'medical_visit') return;
+                if (status) {
+                    status.className = 'badge bg-success-focus text-success-main';
+                    status.textContent = 'Visit update received';
+                }
+                window.setTimeout(() => void loadVisits(), 300);
+            });
+
+            void loadVisits();
+        })();
+    </script>
+@endpush

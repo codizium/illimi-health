@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Illimi\Health\Controllers\Web\HealthWebController;
 
-Route::middleware(['web', 'auth', 'organization'])
+Route::middleware(['web', 'auth'])
     ->prefix('health')
     ->name('health.')
     ->group(function (): void {
